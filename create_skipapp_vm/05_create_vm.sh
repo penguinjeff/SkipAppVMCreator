@@ -15,12 +15,14 @@ VM_NAME="skipappvm"
 echo "[INFO] Checking for existing VM..."
 
 # If VM exists, destroy + undefine it cleanly
-if virsh  dominfo "$VM_NAME" >/dev/null 2>&1; then
+if virsh dominfo "$VM_NAME" >/dev/null 2>&1; then
     echo "[WARN] Existing VM found — destroying..."
-    virsh  destroy "$VM_NAME" 2>/dev/null || true
-    virsh  undefine "$VM_NAME" --nvram || true
-    rm -f "$HOME/.local/share/libvirt/images/${VM_NAME}.qcow2"
+    virsh destroy "$VM_NAME" 2>/dev/null || true
+    virsh undefine "$VM_NAME" --nvram || true
 fi
+
+# Remove old working disk if present
+rm -f "$BUILD_DIR/ubuntu-cloud-copy.img"
 
 # Validate required files
 if [[ ! -f ubuntu-cloud.img ]]; then
@@ -35,9 +37,12 @@ if [[ ! -f seed.iso ]]; then
     exit 1
 fi
 
+echo "[INFO] Creating working copy of cloud image..."
+cp ubuntu-cloud.img ubuntu-cloud-copy.img
+
 echo "[INFO] Creating VM..."
 
-virt-install  \
+virt-install \
   --name "$VM_NAME" \
   --ram 2048 \
   --vcpus 2 \
@@ -45,6 +50,8 @@ virt-install  \
   --disk path="$BUILD_DIR/ubuntu-cloud-copy.img",format=qcow2 \
   --disk path="$BUILD_DIR/seed.iso",device=cdrom \
   --os-variant ubuntu22.04 \
-  --noautoconsole
+  --network user \
+  --noautoconsole \
+  --import
 
 echo "[OK] VM created."

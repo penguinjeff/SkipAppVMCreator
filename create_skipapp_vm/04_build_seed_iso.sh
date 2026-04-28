@@ -15,13 +15,13 @@ mkdir -p "$BUILD_DIR"
 echo "[INFO] Building seed.iso..."
 
 # --- Ensure VM is not running ---
-if virsh  domstate skipappvm 2>/dev/null | grep -q running; then
+if virsh domstate skipappvm 2>/dev/null | grep -q running; then
     echo "[WARN] VM 'skipappvm' is running — attempting graceful shutdown..."
-    virsh  shutdown skipappvm || true
+    virsh shutdown skipappvm || true
 
     # Wait up to 20 seconds for clean shutdown
     for i in {1..20}; do
-        state=$(virsh  domstate skipappvm 2>/dev/null || true)
+        state=$(virsh domstate skipappvm 2>/dev/null || true)
         if [[ "$state" != "running" ]]; then
             echo "[INFO] VM shut down cleanly."
             break
@@ -30,9 +30,9 @@ if virsh  domstate skipappvm 2>/dev/null | grep -q running; then
     done
 
     # If still running → force stop
-    if virsh  domstate skipappvm 2>/dev/null | grep -q running; then
+    if virsh domstate skipappvm 2>/dev/null | grep -q running; then
         echo "[WARN] VM did not shut down — forcing power off..."
-        virsh  destroy skipappvm || true
+        virsh destroy skipappvm || true
     fi
 fi
 
@@ -47,11 +47,12 @@ if [[ ! -f "$META_DATA" ]]; then
     exit 1
 fi
 
-# --- Build seed.iso ---
+# --- Build seed.iso using cloud-localds ---
 echo "[INFO] Creating seed.iso..."
-genisoimage -output "$ISO_PATH" \
-    -volid cidata \
-    -joliet -rock \
-    "$USER_DATA" "$META_DATA"
+TMP_ISO="$ISO_PATH.tmp"
+
+cloud-localds "$TMP_ISO" "$USER_DATA" "$META_DATA"
+
+install -m 0644 "$TMP_ISO" "$ISO_PATH"
 
 echo "[OK] seed.iso rebuilt at: $ISO_PATH"

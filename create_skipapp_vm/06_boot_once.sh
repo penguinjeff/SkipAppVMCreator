@@ -13,12 +13,12 @@ cd "$BUILD_DIR"
 VM_NAME="skipappvm"
 
 echo "[INFO] Booting VM for cloud-init..."
-virsh  start "$VM_NAME"
+virsh start "$VM_NAME"
 
 echo "[INFO] Waiting for VM to shut down after cloud-init..."
 STATE=""
 for i in {1..90}; do
-    STATE=$(virsh  domstate "$VM_NAME" 2>/dev/null || echo "unknown")
+    STATE=$(virsh domstate "$VM_NAME" 2>/dev/null || echo "unknown")
     if [[ "$STATE" == "shut off" ]]; then
         echo "[OK] VM shut down after cloud-init."
         break
@@ -32,11 +32,11 @@ if [[ "$STATE" != "shut off" ]]; then
 fi
 
 echo "[INFO] Starting VM again..."
-virsh  start "$VM_NAME"
+virsh start "$VM_NAME"
 
 echo "[INFO] Waiting for guest agent to respond..."
 for i in {1..60}; do
-    if virsh  qemu-agent-command "$VM_NAME" '{"execute":"guest-ping"}' >/dev/null 2>&1; then
+    if virsh qemu-agent-command "$VM_NAME" '{"execute":"guest-ping"}' >/dev/null 2>&1; then
         echo "[OK] Guest agent is running."
         exit 0
     fi

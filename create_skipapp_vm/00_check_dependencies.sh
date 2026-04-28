@@ -17,7 +17,7 @@ REQUIRED_CMDS=(
     virsh
     virt-install
     genisoimage
-    cloud-init
+    cloud-localds
     qemu-img
     curl
     ssh-keygen
@@ -32,21 +32,13 @@ for cmd in "${REQUIRED_CMDS[@]}"; do
     fi
 done
 
-# --- Check libvirtd is running ---
-if ! systemctl is-active --quiet virtqemud; then
-    echo "[ERROR] libvirt qemu daemon is not running."
-    echo "Run setup_environment.sh again or start it manually:"
-    echo "  sudo systemctl start virtqemud"
-    exit 1
-fi
-
-# --- Check libvirt connection ---
-if ! virsh  list >/dev/null 2>&1; then
-    echo "[ERROR] Cannot connect to libvirt (qemu:///session)."
+# --- Check libvirt system connection ---
+# This is the ONLY reliable check on Fedora 43+
+if ! virsh --connect qemu:///system list >/dev/null 2>&1; then
+    echo "[ERROR] Cannot connect to libvirt (qemu:///system)."
     echo "Are you in the libvirt and kvm groups?"
-    echo "Check with: groups \$USER"
+    echo "Check with: groups $USER"
     exit 1
 fi
-
 
 echo "[OK] Dependencies verified."
