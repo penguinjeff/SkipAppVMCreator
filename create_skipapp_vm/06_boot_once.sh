@@ -1,5 +1,14 @@
 #!/bin/bash
+# create_skipapp_vm/06_boot_once.sh
+
 set -euo pipefail
+
+# --- Resolve directories ---
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+BUILD_DIR="$ROOT_DIR/build"
+
+mkdir -p "$BUILD_DIR"
+cd "$BUILD_DIR"
 
 VM_NAME="skipappvm"
 
@@ -7,8 +16,9 @@ echo "[INFO] Booting VM for cloud-init..."
 virsh --connect qemu:///system start "$VM_NAME"
 
 echo "[INFO] Waiting for VM to shut down after cloud-init..."
-for i in {1..60}; do
-    STATE=$(virsh --connect qemu:///system domstate "$VM_NAME")
+STATE=""
+for i in {1..90}; do
+    STATE=$(virsh --connect qemu:///system domstate "$VM_NAME" 2>/dev/null || echo "unknown")
     if [[ "$STATE" == "shut off" ]]; then
         echo "[OK] VM shut down after cloud-init."
         break
@@ -24,8 +34,8 @@ fi
 echo "[INFO] Starting VM again..."
 virsh --connect qemu:///system start "$VM_NAME"
 
-echo "[INFO] Waiting for guest agent..."
-for i in {1..30}; do
+echo "[INFO] Waiting for guest agent to respond..."
+for i in {1..60}; do
     if virsh --connect qemu:///system qemu-agent-command "$VM_NAME" '{"execute":"guest-ping"}' >/dev/null 2>&1; then
         echo "[OK] Guest agent is running."
         exit 0

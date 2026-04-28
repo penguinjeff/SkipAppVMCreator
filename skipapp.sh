@@ -1,4 +1,5 @@
 #!/bin/bash
+# skipapp.sh
 set -euo pipefail
 
 VM_NAME="skipappvm"
@@ -6,12 +7,32 @@ SSH_KEY="$HOME/.ssh/rsa-skipapp"
 
 echo "Starting SkipApp VM..."
 
-# Start only if not already running
+# --- Pre-flight checks -------------------------------------------------------
+
+# Check SSH key exists
+if [[ ! -f "$SSH_KEY" ]]; then
+    echo "ERROR: SSH key missing: $SSH_KEY"
+    echo "Run: create_skipapp_vm/02_generate_ssh_key.sh"
+    exit 1
+fi
+
+# Check VM exists
+if ! virsh --connect qemu:///system dominfo "$VM_NAME" >/dev/null 2>&1; then
+    echo "ERROR: VM '$VM_NAME' does not exist."
+    echo "You must build it first:"
+    echo "  ./create_skipapp_vm/create_skipapp_vm.sh"
+    exit 1
+fi
+
+# --- Start VM if needed ------------------------------------------------------
+
 if virsh --connect qemu:///system domstate "$VM_NAME" | grep -q running; then
     echo "VM already running."
 else
     virsh --connect qemu:///system start "$VM_NAME" >/dev/null
 fi
+
+# --- Wait for IP via QEMU guest agent ----------------------------------------
 
 echo "Waiting for VM to acquire an IP address via QEMU guest agent..."
 VM_IP=""
@@ -29,13 +50,17 @@ while [[ -z "$VM_IP" && $ATTEMPTS -lt $MAX_ATTEMPTS ]]; do
 done
 
 if [[ -z "$VM_IP" ]]; then
-    echo "ERROR: VM did not report an IP address. Guest agent may not be installed."
+    echo "ERROR: VM did not report an IP address."
+    echo "Guest agent may not be installed or VM was not built correctly."
+    echo "Rebuild with:"
+    echo "  ./create_skipapp_vm/create_skipapp_vm.sh"
     exit 1
 fi
 
 echo "VM is up at $VM_IP"
 
-# Wait for SSH to become available
+# --- Wait for SSH ------------------------------------------------------------
+
 echo "Waiting for SSH to become available..."
 for i in {1..30}; do
     if ssh -i "$SSH_KEY" -o ConnectTimeout=2 -o StrictHostKeyChecking=no "$USER@$VM_IP" "echo ok" 2>/dev/null; then
@@ -43,6 +68,8 @@ for i in {1..30}; do
     fi
     sleep 1
 done
+
+# --- Update SkipApp ----------------------------------------------------------
 
 echo "Updating SkipApp inside VM..."
 ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no "$USER@$VM_IP" \
