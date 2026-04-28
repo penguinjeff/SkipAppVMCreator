@@ -41,18 +41,12 @@ if ! systemctl is-active --quiet virtqemud; then
 fi
 
 # --- Check libvirt connection ---
-if ! virsh --connect qemu:///system list >/dev/null 2>&1; then
-    echo "[ERROR] Cannot connect to libvirt (qemu:///system)."
+if ! virsh  list >/dev/null 2>&1; then
+    echo "[ERROR] Cannot connect to libvirt (qemu:///session)."
     echo "Are you in the libvirt and kvm groups?"
     echo "Check with: groups \$USER"
     exit 1
 fi
 
-# --- Check default network exists ---
-if ! virsh --connect qemu:///system net-info default >/dev/null 2>&1; then
-    echo "[ERROR] Libvirt default network is missing."
-    echo "Run setup_environment.sh again."
-    exit 1
-fi
 
 echo "[OK] Dependencies verified."

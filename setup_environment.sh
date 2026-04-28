@@ -1,4 +1,5 @@
 #!/bin/bash
+# setup_environment.sh
 set -euo pipefail
 
 echo "=== Setting up virtualization environment ==="
@@ -29,23 +30,21 @@ sudo usermod -aG kvm "$USER"
 
 echo "[INFO] Fixing libvirt socket permissions..."
 
-# Allow unprivileged access to libvirt system socket
-sudo chmod 666 /var/run/libvirt/libvirt-sock || true
+# Allow unprivileged access to libvirt system socket (may not exist on split-daemon Fedora)
+sudo chmod 666 /var/run/libvirt/libvirt-sock 2>/dev/null || true
 
-echo "[INFO] Ensuring default network exists..."
+echo "[INFO] Removing all session-mode libvirt networks..."
 
-# Check if default network exists
-if ! sudo virsh net-info default >/dev/null 2>&1; then
-    echo "[WARN] Default network missing — creating it..."
-    sudo virsh net-define /usr/share/libvirt/networks/default.xml
-fi
-
-echo "[INFO] Enabling and starting default network..."
-
-sudo virsh net-autostart default
-sudo virsh net-start default 2>/dev/null || true
+# Session-mode networks cannot function (no bridges, no NAT, no dnsmasq)
+# So we delete ANY that exist to prevent PCI collisions and NIC injection
+for NET in $(virsh --connect qemu:///session net-list --all --name); do
+    echo "  - Removing session network: $NET"
+    virsh --connect qemu:///session net-destroy "$NET" 2>/dev/null || true
+    virsh --connect qemu:///session net-undefine "$NET" 2>/dev/null || true
+done
 
 echo "=== Environment ready ==="
+echo "[INFO] Session mode: networking will be handled entirely by QEMU user-mode networking."
 echo "You MUST log out and log back in for group changes to take effect."
 echo "After that, test with:"
-echo "  virsh --connect qemu:///system list"
+echo "  virsh --connect qemu:///session list"

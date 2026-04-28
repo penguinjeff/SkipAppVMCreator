@@ -15,13 +15,13 @@ mkdir -p "$BUILD_DIR"
 echo "[INFO] Building seed.iso..."
 
 # --- Ensure VM is not running ---
-if virsh --connect qemu:///system domstate skipappvm 2>/dev/null | grep -q running; then
+if virsh  domstate skipappvm 2>/dev/null | grep -q running; then
     echo "[WARN] VM 'skipappvm' is running — attempting graceful shutdown..."
-    virsh --connect qemu:///system shutdown skipappvm || true
+    virsh  shutdown skipappvm || true
 
     # Wait up to 20 seconds for clean shutdown
     for i in {1..20}; do
-        state=$(virsh --connect qemu:///system domstate skipappvm 2>/dev/null || true)
+        state=$(virsh  domstate skipappvm 2>/dev/null || true)
         if [[ "$state" != "running" ]]; then
             echo "[INFO] VM shut down cleanly."
             break
@@ -30,9 +30,9 @@ if virsh --connect qemu:///system domstate skipappvm 2>/dev/null | grep -q runni
     done
 
     # If still running → force stop
-    if virsh --connect qemu:///system domstate skipappvm 2>/dev/null | grep -q running; then
+    if virsh  domstate skipappvm 2>/dev/null | grep -q running; then
         echo "[WARN] VM did not shut down — forcing power off..."
-        virsh --connect qemu:///system destroy skipappvm || true
+        virsh  destroy skipappvm || true
     fi
 fi
 

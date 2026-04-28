@@ -11,6 +11,7 @@ mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
 
 IMAGE_NAME="ubuntu-cloud.img"
+COPY_NAME="ubuntu-cloud-copy.img"
 TMP_IMAGE="${IMAGE_NAME}.tmp"
 IMAGE_URL="https://cloud-images.ubuntu.com/jammy/current/jammy-server-cloudimg-amd64.img"
 CHECKSUM_URL="https://cloud-images.ubuntu.com/jammy/current/SHA256SUMS"
@@ -38,7 +39,8 @@ if [[ ! -f "$IMAGE_NAME" ]]; then
         exit 1
     fi
 
-    mv "$TMP_IMAGE" "$IMAGE_NAME"
+    mv -f "$TMP_IMAGE" "$IMAGE_NAME"
+    cp -f "$IMAGE_NAME" "$COPY_NAME"
 fi
 
 # --- Validate image format ---

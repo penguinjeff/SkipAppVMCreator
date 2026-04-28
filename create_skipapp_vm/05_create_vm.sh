@@ -15,10 +15,11 @@ VM_NAME="skipappvm"
 echo "[INFO] Checking for existing VM..."
 
 # If VM exists, destroy + undefine it cleanly
-if virsh --connect qemu:///system dominfo "$VM_NAME" >/dev/null 2>&1; then
+if virsh  dominfo "$VM_NAME" >/dev/null 2>&1; then
     echo "[WARN] Existing VM found — destroying..."
-    virsh --connect qemu:///system destroy "$VM_NAME" 2>/dev/null || true
-    virsh --connect qemu:///system undefine "$VM_NAME" --nvram || true
+    virsh  destroy "$VM_NAME" 2>/dev/null || true
+    virsh  undefine "$VM_NAME" --nvram || true
+    rm -f "$HOME/.local/share/libvirt/images/${VM_NAME}.qcow2"
 fi
 
 # Validate required files
@@ -36,16 +37,14 @@ fi
 
 echo "[INFO] Creating VM..."
 
-virt-install --connect qemu:///system \
+virt-install  \
   --name "$VM_NAME" \
   --ram 2048 \
   --vcpus 2 \
-  --disk path="$BUILD_DIR/ubuntu-cloud.img",format=qcow2 \
+  --boot hd \
+  --disk path="$BUILD_DIR/ubuntu-cloud-copy.img",format=qcow2 \
   --disk path="$BUILD_DIR/seed.iso",device=cdrom \
   --os-variant ubuntu22.04 \
-  --graphics none \
-  --network network=default \
-  --import \
   --noautoconsole
 
 echo "[OK] VM created."
