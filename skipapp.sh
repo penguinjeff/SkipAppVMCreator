@@ -1,5 +1,5 @@
 #!/bin/bash
-# skipapp.sh — Start SkipApp VM, wait for IP, update SkipApp, launch GUI, shut down VM
+# skipapp.sh — Start SkipApp VM, attach USB, update SkipApp, launch GUI, shut down VM
 
 set -euo pipefail
 
@@ -10,36 +10,101 @@ SSH_USER="ubuntu"
 echo "Starting SkipApp VM..."
 
 # --- Start VM if not running ---
-state=$(virsh --connect qemu:///session domstate "$VM_NAME" 2>/dev/null || true)
+state=$(virsh --connect qemu:///system domstate "$VM_NAME" 2>/dev/null || true)
 
 if [[ "$state" == "running" ]]; then
     echo "VM already running."
 else
-    virsh --connect qemu:///session start "$VM_NAME"
+    virsh --connect qemu:///system start "$VM_NAME"
     echo "VM started."
 fi
 
-
-# --- Wait for cloud-init to finish ---
-echo "Waiting for cloud-init to finish inside VM..."
+# --- Wait for guest agent ---
+echo "[INFO] Waiting for guest agent to become ready..."
 
 ATTEMPTS=0
-MAX_ATTEMPTS=120
+MAX_ATTEMPTS=60
 
 while [[ $ATTEMPTS -lt $MAX_ATTEMPTS ]]; do
-    if ssh -p 2222 -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER@localhost" \
-        "test -f /var/lib/cloud/instance/boot-finished" 2>/dev/null; then
-        echo "[OK] cloud-init finished."
+    if virsh --connect qemu:///system qemu-agent-command "$VM_NAME" '{"execute":"guest-ping"}' >/dev/null 2>&1; then
+        echo "[OK] Guest agent is ready."
         break
     fi
 
-    echo "[INFO] cloud-init still running... ($ATTEMPTS/$MAX_ATTEMPTS)"
+    echo "[INFO] Guest agent not ready yet... ($ATTEMPTS/$MAX_ATTEMPTS)"
     ((ATTEMPTS++))
     sleep 2
 done
 
 if [[ $ATTEMPTS -ge $MAX_ATTEMPTS ]]; then
-    echo "[WARN] cloud-init did not signal completion — continuing anyway."
+    echo "[ERROR] Guest agent did not become ready."
+    exit 1
+fi
+
+# --- Detect USB device on host ---
+echo "[INFO] Detecting Skip 1s USB device on host..."
+
+USB_INFO=$(lsusb | grep -i "Clay\|Skip" | head -n 1 || true)
+
+if [[ -z "$USB_INFO" ]]; then
+    echo "[ERROR] Skip 1s USB device not found. Plug it in and try again."
+    exit 1
+fi
+
+VENDOR=$(echo "$USB_INFO" | awk '{print $6}' | cut -d: -f1)
+PRODUCT=$(echo "$USB_INFO" | awk '{print $6}' | cut -d: -f2)
+
+echo "[OK] Found USB device: vendor=$VENDOR product=$PRODUCT"
+
+# --- Attach USB device to VM ---
+echo "[INFO] Attaching USB device to VM..."
+
+virsh --connect qemu:///system attach-device "$VM_NAME" --live --config /dev/stdin <<EOF
+<hostdev mode='subsystem' type='usb'>
+  <source>
+    <vendor id='0x$VENDOR'/>
+    <product id='0x$PRODUCT'/>
+  </source>
+</hostdev>
+EOF
+
+echo "[OK] USB device attached to VM."
+
+# --- Wait for USB device inside VM ---
+echo "[INFO] Waiting for USB device to appear inside VM..."
+
+ATTEMPTS=0
+MAX_ATTEMPTS=60
+
+while [[ $ATTEMPTS -lt $MAX_ATTEMPTS ]]; do
+
+    # Step 1: run lsusb inside VM
+    EXEC_OUT=$(virsh --connect qemu:///system qemu-agent-command "$VM_NAME" \
+        '{"execute":"guest-exec","arguments":{"path":"/usr/bin/lsusb","capture-output":true}}' \
+        2>/dev/null || true)
+
+    PID=$(echo "$EXEC_OUT" | grep -o '"pid":[0-9]*' | cut -d: -f2)
+
+    # Step 2: fetch output
+    STATUS=$(virsh --connect qemu:///system qemu-agent-command "$VM_NAME" \
+        "{\"execute\":\"guest-exec-status\",\"arguments\":{\"pid\":$PID}}" \
+        2>/dev/null || true)
+
+    STDOUT=$(echo "$STATUS" | grep -o '"out-data":"[^"]*"' | sed 's/"out-data":"//' | sed 's/"$//' | base64 --decode 2>/dev/null || true)
+
+    if echo "$STDOUT" | grep -qi "$VENDOR:$PRODUCT"; then
+        echo "[OK] USB device detected inside VM."
+        break
+    fi
+
+    echo "[INFO] USB not detected yet... ($ATTEMPTS/$MAX_ATTEMPTS)"
+    ((ATTEMPTS++))
+    sleep 2
+done
+
+if [[ $ATTEMPTS -ge $MAX_ATTEMPTS ]]; then
+    echo "[ERROR] USB device did not appear inside VM."
+    exit 1
 fi
 
 # --- Update SkipApp inside VM ---
@@ -70,10 +135,10 @@ echo "[OK] SkipApp launched."
 # --- Shut down VM after exit ---
 echo "Shutting down VM..."
 
-virsh --connect qemu:///session shutdown "$VM_NAME" || true
+virsh --connect qemu:///system shutdown "$VM_NAME" || true
 
 for i in {1..20}; do
-    state=$(virsh --connect qemu:///session domstate "$VM_NAME" 2>/dev/null || true)
+    state=$(virsh --connect qemu:///system domstate "$VM_NAME" 2>/dev/null || true)
     if [[ "$state" != "running" ]]; then
         echo "[OK] VM shut down."
         exit 0
@@ -82,6 +147,6 @@ for i in {1..20}; do
 done
 
 echo "[WARN] VM did not shut down — forcing power off..."
-virsh --connect qemu:///session destroy "$VM_NAME" || true
+virsh --connect qemu:///system destroy "$VM_NAME" || true
 
 echo "[OK] SkipApp session complete."
