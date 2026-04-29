@@ -46,8 +46,37 @@ chpasswd:
   list:
     - "$USER:Password@123"
 
-# --- DO NOT use package_upgrade on first boot ---
-# It breaks apt when networking isn't ready.
+# --- Install SkipApp updater/runner script ---
+write_files:
+  - path: /home/$USER/update-and-run-skipapp.sh
+    owner: $USER:$USER
+    permissions: '0755'
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+
+      APPDIR="\$HOME/skipapp"
+      mkdir -p "\$APPDIR"
+      cd "\$APPDIR"
+
+      echo "[INFO] Checking for latest SkipApp..."
+      LATEST_URL=\$(curl -s https://flirc.tv/downloads/skipapp/linux | \
+                     grep -oP 'https://[^"]+SkipApp[^"]+AppImage' | head -n1)
+
+      if [[ -z "\$LATEST_URL" ]]; then
+          echo "[ERROR] Could not find SkipApp download URL"
+          exit 1
+      fi
+
+      echo "[INFO] Downloading SkipApp..."
+      curl -L "\$LATEST_URL" -o SkipApp.AppImage
+      chmod +x SkipApp.AppImage
+
+      echo "[INFO] Running SkipApp..."
+      ./SkipApp.AppImage
+
+      echo "[INFO] SkipApp exited, shutting down VM..."
+      sudo shutdown -h now
 
 # --- Install guest agent reliably ---
 runcmd:
@@ -55,6 +84,8 @@ runcmd:
   - apt-get install -y --fix-broken
   - apt-get install -y qemu-guest-agent
   - systemctl enable --now qemu-guest-agent
+  - chown $USER:$USER /home/$USER/update-and-run-skipapp.sh
+  - chmod +x /home/$USER/update-and-run-skipapp.sh
 
 power_state:
   mode: poweroff

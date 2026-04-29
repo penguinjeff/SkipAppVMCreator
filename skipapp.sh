@@ -4,8 +4,8 @@
 set -euo pipefail
 
 VM_NAME="skipappvm"
-SSH_KEY="$HOME/.ssh/skipapp_vm"
-SSH_USER="ubuntu"
+SSH_KEY="$HOME/.ssh/rsa-skipapp"
+SSH_USER="$USER"
 
 echo "Starting SkipApp VM..."
 
@@ -57,9 +57,14 @@ PRODUCT=$(echo "$USB_INFO" | awk '{print $6}' | cut -d: -f2)
 echo "[OK] Found USB device: vendor=$VENDOR product=$PRODUCT"
 
 # --- Attach USB device to VM ---
-echo "[INFO] Attaching USB device to VM..."
+echo "[INFO] Attaching USB device to VM (if not already attached)..."
 
-virsh --connect qemu:///system attach-device "$VM_NAME" --live --config /dev/stdin <<EOF
+# Check if device is already attached
+XML=$(virsh --connect qemu:///system dumpxml "$VM_NAME")
+if echo "$XML" | grep -qi "<vendor id='0x$VENDOR'/>"; then
+    echo "[INFO] USB device already attached to VM. Skipping attach."
+else
+    virsh --connect qemu:///system attach-device "$VM_NAME" --live --config /dev/stdin <<EOF
 <hostdev mode='subsystem' type='usb'>
   <source>
     <vendor id='0x$VENDOR'/>
@@ -67,6 +72,8 @@ virsh --connect qemu:///system attach-device "$VM_NAME" --live --config /dev/std
   </source>
 </hostdev>
 EOF
+    echo "[OK] USB device attached to VM."
+fi
 
 echo "[OK] USB device attached to VM."
 

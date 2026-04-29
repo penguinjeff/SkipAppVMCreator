@@ -40,7 +40,7 @@ fi
 echo "[INFO] Creating working copy of cloud image..."
 cp ubuntu-cloud.img ubuntu-cloud-copy.img
 
-echo "[INFO] Creating VM..."
+echo "[INFO] Creating VM XML (not defining yet)..."
 
 virt-install \
   --name "$VM_NAME" \
@@ -51,10 +51,28 @@ virt-install \
   --disk path="$BUILD_DIR/ubuntu-cloud-copy.img",format=raw \
   --disk path="$BUILD_DIR/seed.iso",device=cdrom,bus=sata \
   --os-variant ubuntu22.04 \
-  --network user \
+  --network network=default \
+  --graphics none \
   --import \
   --print-xml > "$BUILD_DIR/$VM_NAME.xml"
 
+echo "[INFO] Adding SSH port forwarding to VM XML..."
+
+awk '
+  /<interface type=.user./ { in_iface=1 }
+  in_iface && /<\/interface>/ {
+    print "      <protocol type=\"tcp\">"
+    print "        <host port=\"2222\"/>"
+    print "        <guest port=\"22\"/>"
+    print "      </protocol>"
+    in_iface=0
+  }
+  { print }
+' "$BUILD_DIR/$VM_NAME.xml" > "$BUILD_DIR/$VM_NAME.xml.tmp"
+
+mv "$BUILD_DIR/$VM_NAME.xml.tmp" "$BUILD_DIR/$VM_NAME.xml"
+
+echo "[INFO] Defining VM with patched XML..."
 virsh define "$BUILD_DIR/$VM_NAME.xml"
 
-echo "[OK] VM created."
+echo "[OK] VM created with SSH port forwarding enabled."
