@@ -1,11 +1,12 @@
 #!/bin/bash
-# skipapp.sh — Start SkipApp VM, attach USB, update SkipApp, launch GUI, shut down VM
+# skipapp.sh — Start SkipApp VM, attach USB, copy script, run SkipApp, shut down VM
 
 set -euo pipefail
 
 VM_NAME="skipappvm"
 SSH_KEY="$HOME/.ssh/rsa-skipapp"
 SSH_USER="$USER"
+ROOT_DIR="$(git rev-parse --show-toplevel)"
 
 echo "Starting SkipApp VM..."
 
@@ -41,6 +42,16 @@ if [[ $ATTEMPTS -ge $MAX_ATTEMPTS ]]; then
     exit 1
 fi
 
+# --- Get VM IP via guest agent ---
+VM_IP=$(virsh domifaddr "$VM_NAME" | awk '/ipv4/ {print $4}' | cut -d/ -f1)
+
+if [[ -z "$VM_IP" ]]; then
+    echo "[ERROR] Could not determine VM IP."
+    exit 1
+fi
+
+echo "[OK] VM IP is $VM_IP"
+
 # --- Detect USB device on host ---
 echo "[INFO] Detecting Skip 1s USB device on host..."
 
@@ -59,7 +70,6 @@ echo "[OK] Found USB device: vendor=$VENDOR product=$PRODUCT"
 # --- Attach USB device to VM ---
 echo "[INFO] Attaching USB device to VM (if not already attached)..."
 
-# Check if device is already attached
 XML=$(virsh --connect qemu:///system dumpxml "$VM_NAME")
 if echo "$XML" | grep -qi "<vendor id='0x$VENDOR'/>"; then
     echo "[INFO] USB device already attached to VM. Skipping attach."
@@ -75,8 +85,6 @@ EOF
     echo "[OK] USB device attached to VM."
 fi
 
-echo "[OK] USB device attached to VM."
-
 # --- Wait for USB device inside VM ---
 echo "[INFO] Waiting for USB device to appear inside VM..."
 
@@ -85,14 +93,12 @@ MAX_ATTEMPTS=60
 
 while [[ $ATTEMPTS -lt $MAX_ATTEMPTS ]]; do
 
-    # Step 1: run lsusb inside VM
     EXEC_OUT=$(virsh --connect qemu:///system qemu-agent-command "$VM_NAME" \
         '{"execute":"guest-exec","arguments":{"path":"/usr/bin/lsusb","capture-output":true}}' \
         2>/dev/null || true)
 
     PID=$(echo "$EXEC_OUT" | grep -o '"pid":[0-9]*' | cut -d: -f2)
 
-    # Step 2: fetch output
     STATUS=$(virsh --connect qemu:///system qemu-agent-command "$VM_NAME" \
         "{\"execute\":\"guest-exec-status\",\"arguments\":{\"pid\":$PID}}" \
         2>/dev/null || true)
@@ -114,46 +120,25 @@ if [[ $ATTEMPTS -ge $MAX_ATTEMPTS ]]; then
     exit 1
 fi
 
-# --- Update SkipApp inside VM ---
-echo "Updating SkipApp inside VM..."
+# --- Copy SkipApp runner script into VM ---
+echo "[INFO] Copying SkipApp runner script into VM..."
 
-ssh -p 2222 -o StrictHostKeyChecking=no -i "$SSH_KEY" "$SSH_USER@localhost" <<'EOF'
-set -euo pipefail
+scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -i "$SSH_KEY" \
+    "$ROOT_DIR/update-and-run-skipapp.sh" \
+    "$SSH_USER@$VM_IP:/home/$SSH_USER/update-and-run-skipapp.sh"
 
-cd /home/ubuntu
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -i "$SSH_KEY" \
+    "$SSH_USER@$VM_IP" "chmod +x ~/update-and-run-skipapp.sh"
 
-echo "[INFO] Downloading latest SkipApp..."
-wget -q https://flirc.tv/downloads/SkipApp.AppImage -O SkipApp.AppImage
-chmod +x SkipApp.AppImage
+echo "[OK] Script copied."
 
-echo "[INFO] SkipApp updated."
-EOF
+# --- Run SkipApp inside VM ---
+echo "[INFO] Running SkipApp inside VM..."
 
-echo "[OK] SkipApp updated."
+ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
+    -i "$SSH_KEY" \
+    "$SSH_USER@$VM_IP" "~/update-and-run-skipapp.sh"
 
-# --- Launch SkipApp GUI inside VM ---
-echo "Launching SkipApp GUI..."
-
-ssh -p 2222 -o StrictHostKeyChecking=no -i "$SSH_KEY" -X "$SSH_USER@localhost" \
-    "/home/ubuntu/SkipApp.AppImage >/dev/null 2>&1 &"
-
-echo "[OK] SkipApp launched."
-
-# --- Shut down VM after exit ---
-echo "Shutting down VM..."
-
-virsh --connect qemu:///system shutdown "$VM_NAME" || true
-
-for i in {1..20}; do
-    state=$(virsh --connect qemu:///system domstate "$VM_NAME" 2>/dev/null || true)
-    if [[ "$state" != "running" ]]; then
-        echo "[OK] VM shut down."
-        exit 0
-    fi
-    sleep 1
-done
-
-echo "[WARN] VM did not shut down — forcing power off..."
-virsh --connect qemu:///system destroy "$VM_NAME" || true
-
-echo "[OK] SkipApp session complete."
+echo "[INFO] SkipApp finished. VM should shut down automatically."
