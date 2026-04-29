@@ -25,21 +25,35 @@ cat > user-data <<EOF
 hostname: skipappvm
 manage_etc_hosts: true
 
+# --- Ensure networking is up BEFORE package install ---
+network:
+  version: 2
+  ethernets:
+    ens3:
+      dhcp4: true
+
 users:
-  - name: ubuntu
+  - name: "$USER"
     sudo: ALL=(ALL) NOPASSWD:ALL
     groups: sudo
     shell: /bin/bash
     ssh_authorized_keys:
       - "$(cat "$PUB_KEY")"
+    lock_passwd: false
 
-package_update: true
-package_upgrade: true
+chpasswd:
+  expire: false
+  list:
+    - "$USER:Password@123"
 
-packages:
-  - qemu-guest-agent
+# --- DO NOT use package_upgrade on first boot ---
+# It breaks apt when networking isn't ready.
 
+# --- Install guest agent reliably ---
 runcmd:
+  - apt-get update
+  - apt-get install -y --fix-broken
+  - apt-get install -y qemu-guest-agent
   - systemctl enable --now qemu-guest-agent
 
 power_state:

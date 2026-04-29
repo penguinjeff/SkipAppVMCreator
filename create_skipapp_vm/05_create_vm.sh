@@ -46,12 +46,15 @@ virt-install \
   --name "$VM_NAME" \
   --ram 2048 \
   --vcpus 2 \
+  --machine pc \
   --boot hd \
-  --disk path="$BUILD_DIR/ubuntu-cloud-copy.img",format=qcow2 \
-  --disk path="$BUILD_DIR/seed.iso",device=cdrom \
+  --disk path="$BUILD_DIR/ubuntu-cloud-copy.img",format=raw \
+  --disk path="$BUILD_DIR/seed.iso",device=cdrom,bus=sata \
   --os-variant ubuntu22.04 \
   --network user \
-  --noautoconsole \
-  --import
+  --import \
+  --print-xml > "$BUILD_DIR/$VM_NAME.xml"
+
+virsh define "$BUILD_DIR/$VM_NAME.xml"
 
 echo "[OK] VM created."
